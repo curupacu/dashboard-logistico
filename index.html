@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel Logístico — Monitoramento de Atrasos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#1b2430;
+    --paper:#f2f4f1;
+    --card:#ffffff;
+    --line:#dde3dc;
+    --muted:#68737d;
+    --ok:#1f7a4d;
+    --ok-bg:#e3f2e9;
+    --warn:#b97309;
+    --warn-bg:#fdf0d7;
+    --crit:#c2362b;
+    --crit-bg:#fbe5e2;
+    --accent:#173e8c;
+    --accent-soft:#e8edf9;
+    --radius:10px;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  /* ---------- header ---------- */
+  header{
+    background:var(--accent);
+    color:#fff;
+    padding:1.4rem clamp(1rem,4vw,2.5rem);
+    display:flex;flex-wrap:wrap;gap:1rem;
+    align-items:flex-end;justify-content:space-between;
+  }
+  header h1{
+    font-family:'Archivo',sans-serif;
+    font-weight:800;font-size:clamp(1.3rem,3vw,1.8rem);
+    letter-spacing:-0.02em;line-height:1.1;
+  }
+  header .sub{
+    font-size:.85rem;opacity:.85;margin-top:.3rem;
+  }
+  .status-pill{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.75rem;
+    background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.3);
+    border-radius:999px;
+    padding:.35rem .8rem;
+    display:flex;align-items:center;gap:.45rem;
+  }
+  .dot{width:.55rem;height:.55rem;border-radius:50%;background:#7be09b;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion: reduce){.dot{animation:none}}
+
+  main{padding:1.4rem clamp(1rem,4vw,2.5rem) 3rem;max-width:1300px;margin:0 auto}
+  section{margin-top:1.8rem}
+  h2{
+    font-family:'Archivo',sans-serif;font-weight:700;
+    font-size:.8rem;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--muted);margin-bottom:.8rem;
+    display:flex;align-items:center;gap:.6rem;
+  }
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  /* ---------- filtros ---------- */
+  .filters{
+    display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:1rem;
+  }
+  .filter label{
+    display:block;font-size:.7rem;font-weight:600;
+    text-transform:uppercase;letter-spacing:.08em;
+    color:var(--muted);margin-bottom:.3rem;
+  }
+  .filter select{
+    font-family:'Inter',sans-serif;font-size:.9rem;
+    padding:.5rem .7rem;border:1px solid var(--line);
+    border-radius:6px;background:#fff;color:var(--ink);
+    min-width:160px;cursor:pointer;
+  }
+  .filter select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  #btn-limpar{
+    font-family:'Inter',sans-serif;font-size:.85rem;font-weight:600;
+    padding:.55rem 1rem;border:1px solid var(--accent);
+    border-radius:6px;background:var(--accent-soft);color:var(--accent);
+    cursor:pointer;
+  }
+  #btn-limpar:hover{background:var(--accent);color:#fff}
+  #btn-limpar:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .filter-count{font-size:.8rem;color:var(--muted);margin-left:auto;font-family:'IBM Plex Mono',monospace}
+
+  /* ---------- KPIs ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.9rem}
+  .kpi{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:1rem 1.1rem;
+    border-top:4px solid var(--accent);
+  }
+  .kpi .label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .kpi .value{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;
+    font-size:1.9rem;margin-top:.25rem;line-height:1.1;
+  }
+  .kpi .detail{font-size:.75rem;color:var(--muted);margin-top:.3rem}
+  .kpi.alerta{border-top-color:var(--crit)}
+  .kpi.alerta .value{color:var(--crit)}
+  .kpi.atencao{border-top-color:var(--warn)}
+  .kpi.atencao .value{color:var(--warn)}
+  .kpi.positivo{border-top-color:var(--ok)}
+  .kpi.positivo .value{color:var(--ok)}
+
+  /* ---------- alertas ---------- */
+  .alertas{display:flex;flex-direction:column;gap:.55rem}
+  .alerta-item{
+    display:flex;gap:.7rem;align-items:flex-start;
+    background:var(--crit-bg);border-left:4px solid var(--crit);
+    border-radius:6px;padding:.7rem .9rem;font-size:.88rem;
+  }
+  .alerta-item.warn{background:var(--warn-bg);border-left-color:var(--warn)}
+  .alerta-item .icone{font-weight:800;font-family:'Archivo',sans-serif}
+  .alerta-item.warn .icone{color:var(--warn)}
+  .alerta-item:not(.warn) .icone{color:var(--crit)}
+
+  /* ---------- gráficos ---------- */
+  .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.9rem}
+  .chart-card{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:1rem 1.1rem;
+  }
+  .chart-card h3{
+    font-family:'Archivo',sans-serif;font-size:.9rem;font-weight:700;margin-bottom:.7rem;
+  }
+  .chart-wrap{position:relative;height:260px}
+
+  /* ---------- tabelas ---------- */
+  .tabela-card{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);overflow-x:auto;
+  }
+  table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:560px}
+  th{
+    font-family:'Archivo',sans-serif;font-size:.7rem;font-weight:700;
+    text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    text-align:left;padding:.75rem .9rem;border-bottom:2px solid var(--line);
+    white-space:nowrap;
+  }
+  td{padding:.65rem .9rem;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  td.num{font-family:'IBM Plex Mono',monospace}
+  .tag{
+    display:inline-block;font-size:.72rem;font-weight:600;
+    padding:.2rem .6rem;border-radius:999px;white-space:nowrap;
+  }
+  .tag.ok{background:var(--ok-bg);color:var(--ok)}
+  .tag.warn{background:var(--warn-bg);color:var(--warn)}
+  .tag.crit{background:var(--crit-bg);color:var(--crit)}
+  .rank-pos{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:var(--muted);
+  }
+  .barra-atraso{
+    height:.5rem;border-radius:999px;background:var(--line);
+    position:relative;min-width:90px;
+  }
+  .barra-atraso > span{
+    position:absolute;inset:0 auto 0 0;border-radius:999px;
+  }
+  .vazio{padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}
+
+  footer{
+    text-align:center;font-size:.75rem;color:var(--muted);
+    padding:1.5rem;border-top:1px solid var(--line);margin-top:2rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Painel Logístico · Monitoramento de Atrasos</h1>
+    <p class="sub">Entregas por transportadora e região — critério de atraso: dias_reais &gt; prazo_dias</p>
+  </div>
+  <div class="status-pill"><span class="dot" aria-hidden="true"></span> dados atualizados</div>
+</header>
+
+<main>
+
+  <!-- FILTROS -->
+  <section aria-label="Filtros">
+    <div class="filters">
+      <div class="filter">
+        <label for="f-transp">Transportadora</label>
+        <select id="f-transp"><option value="">Todas</option></select>
+      </div>
+      <div class="filter">
+        <label for="f-regiao">Região</label>
+        <select id="f-regiao"><option value="">Todas</option></select>
+      </div>
+      <div class="filter">
+        <label for="f-status">Status</label>
+        <select id="f-status">
+          <option value="">Todos</option>
+          <option value="atrasada">Somente atrasadas</option>
+          <option value="prazo">Somente no prazo</option>
+        </select>
+      </div>
+      <button id="btn-limpar" type="button">Limpar filtros</button>
+      <span class="filter-count" id="contagem"></span>
+    </div>
+  </section>
+
+  <!-- KPIs -->
+  <section aria-label="Indicadores">
+    <h2>Indicadores de atraso</h2>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <!-- ALERTAS -->
+  <section aria-label="Alertas">
+    <h2>Alertas automáticos</h2>
+    <div class="alertas" id="alertas"></div>
+  </section>
+
+  <!-- GRÁFICOS -->
+  <section aria-label="Gráficos">
+    <h2>Análise comparativa</h2>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>% de entregas atrasadas por transportadora</h3>
+        <div class="chart-wrap"><canvas id="ch-transp"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Entregas atrasadas × no prazo por região</h3>
+        <div class="chart-wrap"><canvas id="ch-regiao"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Dias de atraso por entrega (prazo × real)</h3>
+        <div class="chart-wrap"><canvas id="ch-entregas"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RANKING -->
+  <section aria-label="Ranking de transportadoras">
+    <h2>Ranking de transportadoras (pior → melhor)</h2>
+    <div class="tabela-card">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Transportadora</th><th>Entregas</th><th>Atrasadas</th>
+            <th>% atraso</th><th>Atraso médio</th><th>Maior atraso</th><th>Situação</th>
+          </tr>
+        </thead>
+        <tbody id="tb-ranking"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PRIORIZAÇÃO -->
+  <section aria-label="Entregas priorizadas">
+    <h2>Priorização — entregas atrasadas mais críticas primeiro</h2>
+    <div class="tabela-card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Transportadora</th><th>Região</th>
+            <th>Prazo (dias)</th><th>Real (dias)</th><th>Atraso</th>
+            <th>Severidade</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tb-prioridade"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Dashboard desenvolvido pelo squad Aggrem · Desafio dos Dados — Etapa 1, Fase 3 · Base didática de 10 entregas
+</footer>
+
+<script>
+/* =========================================================
+   BASE DE DADOS (amostra fornecida no enunciado)
+   Atraso = dias_reais - prazo_dias (atrasada quando > 0)
+========================================================= */
+const ENTREGAS = [
+  { id: 301, transportadora: "RotaMax",  regiao: "Sudeste",      prazo: 3, real: 7  },
+  { id: 302, transportadora: "ViaCargo", regiao: "Sul",          prazo: 5, real: 5  },
+  { id: 303, transportadora: "FlashLog", regiao: "Nordeste",     prazo: 4, real: 9  },
+  { id: 304, transportadora: "RotaMax",  regiao: "Norte",        prazo: 6, real: 4  },
+  { id: 305, transportadora: "ViaCargo", regiao: "Centro-Oeste", prazo: 2, real: 6  },
+  { id: 306, transportadora: "FlashLog", regiao: "Sul",          prazo: 5, real: 12 },
+  { id: 307, transportadora: "RotaMax",  regiao: "Sul",          prazo: 6, real: 9  },
+  { id: 308, transportadora: "ViaCargo", regiao: "Sudeste",      prazo: 3, real: 4  },
+  { id: 309, transportadora: "FlashLog", regiao: "Norte",        prazo: 5, real: 5  },
+  { id: 310, transportadora: "ViaCargo", regiao: "Nordeste",     prazo: 4, real: 8  },
+].map(e => ({
+  ...e,
+  atraso: e.real - e.prazo,
+  atrasada: e.real > e.prazo
+}));
+
+/* severidade do atraso (priorização visual) */
+function severidade(atraso){
+  if (atraso >= 5) return { nivel: "Crítico",  classe: "crit", cor: "#c2362b" };
+  if (atraso >= 3) return { nivel: "Alto",     classe: "warn", cor: "#b97309" };
+  return               { nivel: "Moderado", classe: "ok",   cor: "#1f7a4d" };
+}
+
+const CORES = { RotaMax: "#173e8c", ViaCargo: "#b97309", FlashLog: "#5b3a8c" };
+const fmtPct = v => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) + "%";
+const fmtDias = v => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+
+/* =========================================================
+   ESTADO DOS FILTROS
+========================================================= */
+const filtros = { transportadora: "", regiao: "", status: "" };
+let charts = {};
+
+function dadosFiltrados(){
+  return ENTREGAS.filter(e =>
+    (!filtros.transportadora || e.transportadora === filtros.transportadora) &&
+    (!filtros.regiao || e.regiao === filtros.regiao) &&
+    (!filtros.status ||
+      (filtros.status === "atrasada" && e.atrasada) ||
+      (filtros.status === "prazo" && !e.atrasada))
+  );
+}
+
+/* agrupa e calcula métricas por chave */
+function agrupar(dados, chave){
+  const grupos = {};
+  dados.forEach(e => {
+    const k = e[chave];
+    if (!grupos[k]) grupos[k] = { total: 0, atrasadas: 0, somaAtraso: 0, maiorAtraso: 0 };
+    const g = grupos[k];
+    g.total++;
+    if (e.atrasada){
+      g.atrasadas++;
+      g.somaAtraso += e.atraso;
+      g.maiorAtraso = Math.max(g.maiorAtraso, e.atraso);
+    }
+  });
+  Object.values(grupos).forEach(g => {
+    g.pct = g.total ? (g.atrasadas / g.total) * 100 : 0;
+    g.atrasoMedio = g.atrasadas ? g.somaAtraso / g.atrasadas : 0;
+  });
+  return grupos;
+}
+
+/* =========================================================
+   RENDERIZAÇÃO
+========================================================= */
+function renderKPIs(dados){
+  const el = document.getElementById("kpis");
+  const total = dados.length;
+  const atrasadas = dados.filter(e => e.atrasada);
+  const pct = total ? (atrasadas.length / total) * 100 : 0;
+  const atrasoMedio = atrasadas.length
+    ? atrasadas.reduce((s, e) => s + e.atraso, 0) / atrasadas.length : 0;
+
+  const porTransp = agrupar(dados, "transportadora");
+  const porRegiao = agrupar(dados, "regiao");
+  const piorTransp = Object.entries(porTransp).sort((a,b) =>
+    b[1].pct - a[1].pct || b[1].atrasoMedio - a[1].atrasoMedio)[0];
+  const piorRegiao = Object.entries(porRegiao).sort((a,b) =>
+    b[1].pct - a[1].pct || b[1].atrasoMedio - a[1].atrasoMedio)[0];
+
+  const classePct = pct >= 50 ? "alerta" : pct >= 25 ? "atencao" : "positivo";
+
+  el.innerHTML = `
+    <div class="kpi">
+      <div class="label">Entregas analisadas</div>
+      <div class="value">${total}</div>
+      <div class="detail">após filtros aplicados</div>
+    </div>
+    <div class="kpi ${classePct}">
+      <div class="label">Taxa de atraso</div>
+      <div class="value">${fmtPct(pct)}</div>
+      <div class="detail">${atrasadas.length} de ${total} entregas atrasadas</div>
+    </div>
+    <div class="kpi ${atrasoMedio >= 4 ? "alerta" : atrasoMedio >= 2 ? "atencao" : "positivo"}">
+      <div class="label">Atraso médio</div>
+      <div class="value">${fmtDias(atrasoMedio)}<span style="font-size:.9rem"> dias</span></div>
+      <div class="detail">média entre as entregas atrasadas</div>
+    </div>
+    <div class="kpi alerta">
+      <div class="label">Pior transportadora</div>
+      <div class="value" style="font-size:1.25rem">${piorTransp ? piorTransp[0] : "—"}</div>
+      <div class="detail">${piorTransp ? fmtPct(piorTransp[1].pct) + " de atraso · " + fmtDias(piorTransp[1].atrasoMedio) + " dias em média" : "sem dados"}</div>
+    </div>
+    <div class="kpi alerta">
+      <div class="label">Região mais crítica</div>
+      <div class="value" style="font-size:1.25rem">${piorRegiao ? piorRegiao[0] : "—"}</div>
+      <div class="detail">${piorRegiao ? fmtPct(piorRegiao[1].pct) + " das entregas atrasadas" : "sem dados"}</div>
+    </div>
+  `;
+}
+
+function renderAlertas(dados){
+  const el = document.getElementById("alertas");
+  const alertas = [];
+
+  const criticas = dados.filter(e => e.atrasada && e.atraso >= 5)
+                        .sort((a,b) => b.atraso - a.atraso);
+  criticas.forEach(e => alertas.push({
+    tipo: "crit",
+    texto: `Entrega #${e.id} (${e.transportadora} · ${e.regiao}) com ${e.atraso} dias de atraso — prazo de ${e.prazo} dias, levou ${e.real}. Ação imediata recomendada.`
+  }));
+
+  const porRegiao = agrupar(dados, "regiao");
+  Object.entries(porRegiao).forEach(([regiao, g]) => {
+    if (g.total >= 2 && g.pct === 100){
+      alertas.push({ tipo: "warn",
+        texto: `Região ${regiao}: 100% das entregas analisadas estão atrasadas (${g.atrasadas}/${g.total}).` });
+    }
+  });
+
+  const porTransp = agrupar(dados, "transportadora");
+  Object.entries(porTransp).forEach(([t, g]) => {
+    if (g.atrasoMedio >= 5){
+      alertas.push({ tipo: "warn",
+        texto: `${t} apresenta atraso médio de ${fmtDias(g.atrasoMedio)} dias por entrega atrasada — o maior do período.` });
+    }
+  });
+
+  el.innerHTML = alertas.length
+    ? alertas.map(a => `
+        <div class="alerta-item ${a.tipo === "warn" ? "warn" : ""}">
+          <span class="icone">${a.tipo === "warn" ? "▲" : "●"}</span>
+          <span>${a.texto}</span>
+        </div>`).join("")
+    : `<div class="vazio">Nenhum alerta para a seleção atual.</div>`;
+}
+
+function destruirChart(id){
+  if (charts[id]){ charts[id].destroy(); delete charts[id]; }
+}
+
+function renderCharts(dados){
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.color = "#68737d";
+
+  /* % atraso por transportadora */
+  destruirChart("transp");
+  const porTransp = agrupar(dados, "transportadora");
+  const transpNomes = Object.keys(porTransp).sort((a,b) => porTransp[b].pct - porTransp[a].pct);
+  charts.transp = new Chart(document.getElementById("ch-transp"), {
+    type: "bar",
+    data: {
+      labels: transpNomes,
+      datasets: [{
+        label: "% de entregas atrasadas",
+        data: transpNomes.map(t => porTransp[t].pct),
+        backgroundColor: transpNomes.map(t => CORES[t] || "#173e8c"),
+        borderRadius: 5
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => {
+          const g = porTransp[c.label];
+          return [` ${fmtPct(c.parsed.y)} atrasadas (${g.atrasadas}/${g.total})`,
+                  ` atraso médio: ${fmtDias(g.atrasoMedio)} dias`];
+        }}}
+      }
+    }
+  });
+
+  /* atrasadas x no prazo por região */
+  destruirChart("regiao");
+  const porRegiao = agrupar(dados, "regiao");
+  const regioes = Object.keys(porRegiao).sort((a,b) => porRegiao[b].atrasadas - porRegiao[a].atrasadas);
+  charts.regiao = new Chart(document.getElementById("ch-regiao"), {
+    type: "bar",
+    data: {
+      labels: regioes,
+      datasets: [
+        { label: "Atrasadas", data: regioes.map(r => porRegiao[r].atrasadas),
+          backgroundColor: "#c2362b", borderRadius: 4 },
+        { label: "No prazo", data: regioes.map(r => porRegiao[r].total - porRegiao[r].atrasadas),
+          backgroundColor: "#1f7a4d", borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+      },
+      plugins: { legend: { position: "bottom" } }
+    }
+  });
+
+  /* prazo x real por entrega */
+  destruirChart("entregas");
+  const ordenadas = [...dados].sort((a,b) => b.atraso - a.atraso);
+  charts.entregas = new Chart(document.getElementById("ch-entregas"), {
+    type: "bar",
+    data: {
+      labels: ordenadas.map(e => "#" + e.id),
+      datasets: [
+        { label: "Prazo (dias)", data: ordenadas.map(e => e.prazo),
+          backgroundColor: "#aebed9", borderRadius: 4 },
+        { label: "Tempo real (dias)", data: ordenadas.map(e => e.real),
+          backgroundColor: ordenadas.map(e => e.atrasada ? severidade(e.atraso).cor : "#1f7a4d"),
+          borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 2 } } },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { callbacks: { afterBody: items => {
+          const e = ordenadas[items[0].dataIndex];
+          return e.atrasada ? `Atraso: ${e.atraso} dias (${severidade(e.atraso).nivel})` : "Entrega no prazo";
+        }}}
+      }
+    }
+  });
+}
+
+function renderRanking(dados){
+  const tb = document.getElementById("tb-ranking");
+  const porTransp = agrupar(dados, "transportadora");
+  const lista = Object.entries(porTransp).sort((a,b) =>
+    b[1].pct - a[1].pct || b[1].atrasoMedio - a[1].atrasoMedio);
+
+  tb.innerHTML = lista.length ? lista.map(([nome, g], i) => {
+    const tag = g.pct >= 70 ? "crit" : g.pct >= 40 ? "warn" : "ok";
+    const txt = g.pct >= 70 ? "Crítico" : g.pct >= 40 ? "Atenção" : "Regular";
+    return `<tr>
+      <td class="rank-pos">${i + 1}º</td>
+      <td><strong>${nome}</strong></td>
+      <td class="num">${g.total}</td>
+      <td class="num">${g.atrasadas}</td>
+      <td class="num">${fmtPct(g.pct)}</td>
+      <td class="num">${fmtDias(g.atrasoMedio)} dias</td>
+      <td class="num">${g.maiorAtraso} dias</td>
+      <td><span class="tag ${tag}">${txt}</span></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="8" class="vazio">Nenhuma transportadora na seleção atual.</td></tr>`;
+}
+
+function renderPrioridade(dados){
+  const tb = document.getElementById("tb-prioridade");
+  const atrasadas = dados.filter(e => e.atrasada).sort((a,b) => b.atraso - a.atraso);
+  const maiorAtraso = atrasadas.length ? atrasadas[0].atraso : 1;
+
+  tb.innerHTML = atrasadas.length ? atrasadas.map(e => {
+    const s = severidade(e.atraso);
+    const largura = Math.max(8, (e.atraso / maiorAtraso) * 100);
+    return `<tr>
+      <td class="num"><strong>#${e.id}</strong></td>
+      <td>${e.transportadora}</td>
+      <td>${e.regiao}</td>
+      <td class="num">${e.prazo}</td>
+      <td class="num">${e.real}</td>
+      <td class="num"><strong>+${e.atraso} dias</strong></td>
+      <td><span class="tag ${s.classe}">${s.nivel}</span></td>
+      <td><div class="barra-atraso" title="${e.atraso} dias de atraso">
+            <span style="width:${largura}%;background:${s.cor}"></span>
+          </div></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="8" class="vazio">Nenhuma entrega atrasada na seleção atual. ✓</td></tr>`;
+}
+
+function renderTudo(){
+  const dados = dadosFiltrados();
+  document.getElementById("contagem").textContent =
+    `${dados.length}/${ENTREGAS.length} entregas exibidas`;
+  renderKPIs(dados);
+  renderAlertas(dados);
+  renderCharts(dados);
+  renderRanking(dados);
+  renderPrioridade(dados);
+}
+
+/* =========================================================
+   FILTROS — montagem e eventos
+========================================================= */
+function montarFiltros(){
+  const selTransp = document.getElementById("f-transp");
+  const selRegiao = document.getElementById("f-regiao");
+
+  [...new Set(ENTREGAS.map(e => e.transportadora))].sort().forEach(t => {
+    selTransp.insertAdjacentHTML("beforeend", `<option value="${t}">${t}</option>`);
+  });
+  [...new Set(ENTREGAS.map(e => e.regiao))].sort().forEach(r => {
+    selRegiao.insertAdjacentHTML("beforeend", `<option value="${r}">${r}</option>`);
+  });
+
+  selTransp.addEventListener("change", e => { filtros.transportadora = e.target.value; renderTudo(); });
+  selRegiao.addEventListener("change", e => { filtros.regiao = e.target.value; renderTudo(); });
+  document.getElementById("f-status").addEventListener("change", e => { filtros.status = e.target.value; renderTudo(); });
+  document.getElementById("btn-limpar").addEventListener("click", () => {
+    filtros.transportadora = filtros.regiao = filtros.status = "";
+    selTransp.value = ""; selRegiao.value = "";
+    document.getElementById("f-status").value = "";
+    renderTudo();
+  });
+}
+
+montarFiltros();
+renderTudo();
+</script>
+</body>
+</html>
